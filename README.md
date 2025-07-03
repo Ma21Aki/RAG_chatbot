@@ -1,2 +1,3 @@
 # RAG_chatbot
 geminiを用いてpdf文書から情報抽出をするRAG
+f
