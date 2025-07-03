@@ -2,8 +2,8 @@
 import google.generativeai as genai
 import numpy as np
 
-# 🔐 ここにあなたのAPIキーを直接書く！
-genai.configure(api_key="AIzaSyC6MGicISfQ6CqIOTJfVs1lNadsm8N3VLQ")
+# 🔐 APIキーはローカルでは直接記述してます。
+genai.configure(api_key="")
 
 # 軽量で無料枠向きのモデル
 model = genai.GenerativeModel("gemini-1.5-flash")
