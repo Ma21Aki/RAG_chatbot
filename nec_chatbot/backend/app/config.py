@@ -28,7 +28,7 @@ class Config:
     EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingual-MiniLM-L12-v2")
 
     # Chroma(検索結果上位◯件まで検索)
-    CHROMA_TOP_K = int(os.getenv("CHROMA_TOP_K","10"))    
+    CHROMA_TOP_K = int(os.getenv("CHROMA_TOP_K","5"))    
 
     # Gemini(geminiAPIに課す制限。使用トークン上限、創造性(高いと確率的に低い回答も生成。0~2))
     GEMINI_MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "500"))
