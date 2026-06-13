@@ -11,7 +11,7 @@ from app.config import config
 
 def test_folder_metadata():
     """フォルダ情報を含めた検索テスト"""
-    embedder = Embedder(api_key=config.GEMINI_API_KEY, model_name=config.EMBEDDING_MODEL_NAME)
+    embedder = Embedder(model_name=config.EMBEDDING_MODEL_NAME)
     retriever = Retriever(db_path=config.CHROMA_DB_PATH)
     retriever.get_collection()
 

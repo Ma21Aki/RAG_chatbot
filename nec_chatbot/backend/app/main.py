@@ -24,10 +24,10 @@ async def startup_event():
     global rag_pipeline
 
     gemini_api_key = os.getenv("GEMINI_API_KEY", "")  # 後で設定
-    embedding_model = os.getenv("EMBEDDING_MODEL_NAME", "gemini-embedding-001")
+    embedding_model = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingual-MiniLM-L12-v2")
     chroma_db_path = os.getenv("CHROMA_DB_PATH", "./data/chroma_db")
 
-    embedder = Embedder(api_key=gemini_api_key, model_name=embedding_model)
+    embedder = Embedder(model_name=embedding_model)
     retriever = Retriever(db_path=chroma_db_path)
     retriever.get_collection()  # コレクション確認
     generator = Generator(api_key=gemini_api_key)

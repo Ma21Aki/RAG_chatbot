@@ -24,13 +24,13 @@ class Config:
     CHROMA_DB_PATH = str(PROJECT_ROOT / "data" / "chroma_db")
     SQLITE_DB_PATH = str(PROJECT_ROOT / "data" / "app.db")
 
-    # Embedding
-    EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "gemini-embedding-001")
+    # Embedding(embeddingのモデル選択。DB作成も質問文の機械語翻訳もこれ)
+    EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingual-MiniLM-L12-v2")
 
-    # Chroma
-    CHROMA_TOP_K = int(os.getenv("CHROMA_TOP_K", "5"))
+    # Chroma(検索結果上位◯件まで検索)
+    CHROMA_TOP_K = int(os.getenv("CHROMA_TOP_K","10"))    
 
-    # Gemini
+    # Gemini(geminiAPIに課す制限。使用トークン上限、創造性(高いと確率的に低い回答も生成。0~2))
     GEMINI_MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "500"))
     GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.3"))
 

@@ -69,7 +69,7 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list:
     return chunks if chunks else [text]  # テキストが小さい場合はそのまま返す
 
 
-def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "gemini-embedding-001"):
+def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"):
     """PDF ディレクトリ全体をインデックスする
 
     Args:
@@ -83,7 +83,7 @@ def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "gemini-embeddin
 
     # Embedder & Retriever 初期化
     print("[INIT] Initializing Embedding model...")
-    embedder = Embedder(api_key=config.GEMINI_API_KEY, model_name=model_name)
+    embedder = Embedder(model_name=model_name)
     retriever = Retriever(db_path=db_path)
 
     # 既存インデックスをリセット
@@ -142,7 +142,7 @@ def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "gemini-embeddin
 
                     # 検索側と同じ Embedder で文書ベクトルを計算して渡す
                     # （索引・検索のモデル不一致を防ぐ）
-                    embeddings = embedder.embed(texts, task_type="RETRIEVAL_DOCUMENT")
+                    embeddings = embedder.embed(texts)
                     retriever.add_documents(texts, metadatas, ids, embeddings=embeddings)
 
                 total_chunks += len(chunks)
