@@ -53,6 +53,9 @@ class Generator:
             config=types.GenerateContentConfig(
                 max_output_tokens=max_tokens,
                 temperature=temperature,
+                # gemini-2.5系は「思考」が出力トークン枠を消費し、回答が途中で切れる。
+                # RAGの回答に思考は不要なので無効化（thinking_budget=0）。
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
         )
 
@@ -102,6 +105,9 @@ class Generator:
             config=types.GenerateContentConfig(
                 max_output_tokens=max_tokens,
                 temperature=temperature,
+                # gemini-2.5系は「思考」が出力トークン枠を消費し、回答が途中で切れる。
+                # RAGの回答に思考は不要なので無効化（thinking_budget=0）。
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
         )
 
@@ -154,6 +160,9 @@ class Generator:
             config=types.GenerateContentConfig(
                 max_output_tokens=max_tokens,
                 temperature=temperature,
+                # gemini-2.5系は「思考」が出力トークン枠を消費し、回答が途中で切れる。
+                # RAGの回答に思考は不要なので無効化（thinking_budget=0）。
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
         ):
             if chunk.text:
