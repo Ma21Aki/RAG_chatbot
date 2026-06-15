@@ -6,7 +6,9 @@ from .retriever import Retriever
 from .generator import Generator
 from .bm25_retriever import BM25Retriever
 from .hybrid_retriever import HybridRetriever
+from .glossary import Glossary
 from .prompt_templates import SYSTEM_PROMPT, format_context, format_sources
+from ..config import config
 
 
 class RAGPipeline:
@@ -26,8 +28,9 @@ class RAGPipeline:
         self.embedder = embedder
         self.retriever = retriever
         self.generator = generator
-        # 語彙検索（BM25）とベクトル検索を RRF で統合した hybrid 検索を構築
-        self.hybrid = HybridRetriever(embedder, retriever, BM25Retriever(retriever))
+        # 語彙検索（BM25）とベクトル検索を RRF で統合し、用語注入も行う hybrid 検索を構築
+        glossary = Glossary(config.PDF_DATA_DIR)
+        self.hybrid = HybridRetriever(embedder, retriever, BM25Retriever(retriever), glossary=glossary)
 
     def query(self, user_query: str, top_k: int = 5) -> Dict[str, Any]:
         """ユーザー質問に対して回答と出典を返す
@@ -123,14 +126,12 @@ class RAGPipeline:
         """
         total_start = time.time()
 
-        # 1. 質問をベクトル化
-        embedding_start = time.time()
-        query_embedding = self.embedder.embed_single(user_query)
-        embedding_time = time.time() - embedding_start
-
-        # 2. hybrid 検索（embedding + BM25 を RRF 統合。埋め込みは上で計測済みを渡す）
+        # 1. hybrid 検索（用語注入 → embedding + BM25 → RRF → 係名ブースト）
+        #    埋め込みは用語注入後のクエリに対して hybrid 内部で行うため、検索全体を
+        #    search_time として計測する（embedding_time は内訳を分離しないため 0）。
+        embedding_time = 0.0
         search_start = time.time()
-        search_results = self.hybrid.search(user_query, top_k=top_k, query_embedding=query_embedding)
+        search_results = self.hybrid.search(user_query, top_k=top_k)
         search_time = time.time() - search_start
 
         # 3. コンテキスト作成

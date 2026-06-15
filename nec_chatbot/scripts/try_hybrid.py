@@ -14,6 +14,7 @@ from app.rag.embedder import Embedder
 from app.rag.retriever import Retriever
 from app.rag.bm25_retriever import BM25Retriever
 from app.rag.hybrid_retriever import HybridRetriever
+from app.rag.glossary import Glossary
 from app.config import config
 
 
@@ -30,7 +31,8 @@ def main():
     retriever = Retriever(db_path=config.CHROMA_DB_PATH)
     retriever.get_collection()
     bm25 = BM25Retriever(retriever)
-    hybrid = HybridRetriever(embedder, retriever, bm25)
+    glossary = Glossary(config.PDF_DATA_DIR)
+    hybrid = HybridRetriever(embedder, retriever, bm25, glossary=glossary)
 
     print(f"クエリ: {query}\n")
 
