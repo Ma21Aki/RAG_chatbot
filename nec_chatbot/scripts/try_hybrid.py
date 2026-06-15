@@ -42,9 +42,10 @@ def main():
     for i, h in enumerate(bm25.search(query, top_k=top_k), 1):
         print(f'{i}. {_label(h)}  score={h["score"]:.3f}')
 
-    print("\n=== hybrid (RRF) ===")
+    print("\n=== hybrid (RRF + 係名ブースト) ===")
     for i, h in enumerate(hybrid.search(query, top_k=top_k), 1):
-        print(f'{i}. {_label(h)}  rrf={h["rrf_score"]:.4f}')
+        mark = " [boost]" if h.get("boosted") else ""
+        print(f'{i}. {_label(h)}  rrf={h["rrf_score"]:.4f}{mark}')
 
 
 if __name__ == "__main__":
