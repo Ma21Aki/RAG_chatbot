@@ -1,5 +1,6 @@
 """PDF インデックス再構築スクリプト"""
 import os
+import re
 import sys
 from pathlib import Path
 import argparse
@@ -11,6 +12,11 @@ from pypdf import PdfReader
 from app.rag.embedder import Embedder
 from app.rag.retriever import Retriever
 from app.config import config
+
+
+# 索引に含めるチャンクの最小文字数（空白を除く）。
+# これ未満は更新履歴・空ページ等の薄いチャンクとみなして除外する。実験で調整。
+MIN_CHUNK_CHARS = 30
 
 
 def extract_text_from_pdf(pdf_path: str) -> list:
@@ -34,6 +40,44 @@ def extract_text_from_pdf(pdf_path: str) -> list:
             })
 
     return pages
+
+
+def extract_pages(path: Path) -> list:
+    """ファイルからページ単位のテキストを取り出す（PDF / Markdown 対応）
+
+    OCR が必要な画像 PDF は、同じ場所に同名の .md を置くことで内容を差し替える。
+    .md は全体を 1 ページ扱いにする。
+
+    Args:
+        path: PDF または Markdown のパス
+
+    Returns:
+        [{text, page}] のリスト
+    """
+    if path.suffix.lower() == ".md":
+        text = path.read_text(encoding="utf-8")
+        return [{'text': text, 'page': 1}] if text.strip() else []
+    return extract_text_from_pdf(str(path))
+
+
+def normalize_text(text: str) -> str:
+    """抽出テキストの空白を整える
+
+    PDF 抽出は空白・改行だらけになりがちなので、行内の連続空白を1つにまとめ、
+    空行を除去する。これで薄いチャンクの判定が正確になり、埋め込みも本文に集中する。
+
+    Args:
+        text: 元テキスト
+
+    Returns:
+        整形済みテキスト
+    """
+    lines = []
+    for line in text.splitlines():
+        line = re.sub(r"[ \t　]+", " ", line).strip()  # 行内の連続空白を圧縮
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list:
@@ -91,35 +135,42 @@ def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "paraphrase-mult
     retriever.delete_collection()
     retriever.get_collection()
 
-    # PDF 収集
+    # 索引対象を収集（PDF と、OCR 差し替え用の Markdown）
     pdf_files = list(Path(pdf_dir).rglob("*.pdf"))
-    print(f"[FILES] Found {len(pdf_files)} PDF files\n")
+    md_files = list(Path(pdf_dir).rglob("*.md"))
 
-    if not pdf_files:
-        print("[WARN] No PDF files found")
+    # 同じ場所に同名の .md がある PDF は、抽出失敗版なので .md に差し替える
+    md_keys = {(p.parent, p.stem) for p in md_files}
+    pdf_files = [p for p in pdf_files if (p.parent, p.stem) not in md_keys]
+    src_files = pdf_files + md_files
+    print(f"[FILES] Found {len(pdf_files)} PDF + {len(md_files)} Markdown files\n")
+
+    if not src_files:
+        print("[WARN] No source files found")
         return
 
     # インデックス構築
     total_chunks = 0
     total_documents = 0
 
-    for i, pdf_path in enumerate(pdf_files, 1):
-        print(f"[{i}/{len(pdf_files)}] {pdf_path.name}")
+    for i, src_path in enumerate(src_files, 1):
+        print(f"[{i}/{len(src_files)}] {src_path.name}")
 
         try:
-            # PDF からテキスト抽出
-            # パスが正しく存在するか確認
-            if not pdf_path.exists():
-                print(f"  [ERROR] File not found: {pdf_path}")
+            # テキスト抽出（パスの存在を確認）
+            if not src_path.exists():
+                print(f"  [ERROR] File not found: {src_path}")
                 continue
-            pages = extract_text_from_pdf(str(pdf_path))
+            pages = extract_pages(src_path)
 
             for page_info in pages:
-                page_text = page_info['text']
+                page_text = normalize_text(page_info['text'])
                 page_num = page_info['page']
 
                 # チャンク分割
                 chunks = chunk_text(page_text, chunk_size=500, overlap=50)
+                # 薄いチャンク（更新履歴・空ページ等）を除外
+                chunks = [c for c in chunks if len(re.sub(r"\s", "", c)) >= MIN_CHUNK_CHARS]
 
                 # チャンクをインデックスに追加（バッチ処理で小分けにしてメモリ不足を回避）
                 batch_size = 10
@@ -130,15 +181,19 @@ def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "paraphrase-mult
                     ids = []
 
                     for chunk_idx, chunk in enumerate(batch_chunks, start=batch_start):
-                        texts.append(chunk)
-                        folder = str(pdf_path.parent.relative_to(Path(pdf_dir)))
+                        # 係名（ファイル名）をチャンク先頭に付けてから埋め込む。
+                        # 本文だけだと「どの係の仕事か」がベクトルに乗らず、
+                        # 別の係の似た記述と取り違えるため。
+                        section = src_path.stem
+                        texts.append(f"【{section}】\n{chunk}")
+                        folder = str(src_path.parent.relative_to(Path(pdf_dir)))
                         metadatas.append({
-                            'source': pdf_path.name,
+                            'source': src_path.name,
                             'folder': folder,
                             'page': page_num,
                             'chunk_idx': chunk_idx
                         })
-                        ids.append(f"{pdf_path.stem}_{page_num}_{chunk_idx}_{uuid4().hex[:8]}")
+                        ids.append(f"{src_path.stem}_{page_num}_{chunk_idx}_{uuid4().hex[:8]}")
 
                     # 検索側と同じ Embedder で文書ベクトルを計算して渡す
                     # （索引・検索のモデル不一致を防ぐ）
