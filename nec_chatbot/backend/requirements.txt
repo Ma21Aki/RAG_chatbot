@@ -12,6 +12,10 @@ sentence-transformers>=2.2.0
 # PDF processing
 pypdf>=4.0.0
 
+# Lexical search (BM25 hybrid)
+janome>=0.5.0
+rank-bm25>=0.2.2
+
 # Environment variables
 python-dotenv>=1.0.0
 

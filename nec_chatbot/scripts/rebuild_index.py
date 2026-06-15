@@ -113,6 +113,44 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list:
     return chunks if chunks else [text]  # テキストが小さい場合はそのまま返す
 
 
+def chunk_markdown(text: str, chunk_size: int = 500, overlap: int = 50) -> list:
+    """Markdown を見出し（# 行）単位で分割する
+
+    各セクションは見出し行から次の見出し直前まで。長いセクションはさらに
+    chunk_text で分割する。用語辞典のように「見出し＝1項目」の文書では、
+    各項目が独立したチャンクになり、語の取りこぼし（定義が他項目に埋もれる）を防ぐ。
+
+    Args:
+        text: Markdown テキスト
+        chunk_size: 1チャンクの最大文字数
+        overlap: 長いセクションを再分割する際のオーバーラップ
+
+    Returns:
+        チャンクのリスト
+    """
+    sections = []
+    current = []
+    for line in text.splitlines():
+        if line.startswith("#") and current:  # 見出しで区切る
+            sections.append("\n".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        sections.append("\n".join(current))
+
+    chunks = []
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+        if len(section) <= chunk_size:
+            chunks.append(section)
+        else:
+            chunks.extend(chunk_text(section, chunk_size, overlap))  # 長い節は更に分割
+    return chunks
+
+
 def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2"):
     """PDF ディレクトリ全体をインデックスする
 
@@ -167,8 +205,11 @@ def rebuild_index(pdf_dir: str, db_path: str, model_name: str = "paraphrase-mult
                 page_text = normalize_text(page_info['text'])
                 page_num = page_info['page']
 
-                # チャンク分割
-                chunks = chunk_text(page_text, chunk_size=500, overlap=50)
+                # チャンク分割（.md は見出し単位、PDF は固定長）
+                if src_path.suffix.lower() == ".md":
+                    chunks = chunk_markdown(page_text, chunk_size=500, overlap=50)
+                else:
+                    chunks = chunk_text(page_text, chunk_size=500, overlap=50)
                 # 薄いチャンク（更新履歴・空ページ等）を除外
                 chunks = [c for c in chunks if len(re.sub(r"\s", "", c)) >= MIN_CHUNK_CHARS]
 

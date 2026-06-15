@@ -4,6 +4,8 @@ import time
 from .embedder import Embedder
 from .retriever import Retriever
 from .generator import Generator
+from .bm25_retriever import BM25Retriever
+from .hybrid_retriever import HybridRetriever
 from .prompt_templates import SYSTEM_PROMPT, format_context, format_sources
 
 
@@ -14,12 +16,18 @@ class RAGPipeline:
         """
         Args:
             embedder: Embedding エンジン
-            retriever: ベクトル検索エンジン
+            retriever: ベクトル検索エンジン（Chroma）
             generator: 回答生成エンジン
+
+        検索は embedding と BM25 を RRF で統合した hybrid を用いる。
+        BM25 索引は retriever のチャンクから構築するため、呼び出し前に
+        コレクションがロードされている前提（get_collection 済み）。
         """
         self.embedder = embedder
         self.retriever = retriever
         self.generator = generator
+        # 語彙検索（BM25）とベクトル検索を RRF で統合した hybrid 検索を構築
+        self.hybrid = HybridRetriever(embedder, retriever, BM25Retriever(retriever))
 
     def query(self, user_query: str, top_k: int = 5) -> Dict[str, Any]:
         """ユーザー質問に対して回答と出典を返す
@@ -36,16 +44,13 @@ class RAGPipeline:
                 'search_results': 検索結果の詳細
             }
         """
-        # 1. 質問をベクトル化
-        query_embedding = self.embedder.embed_single(user_query)
+        # 1. hybrid 検索（embedding + BM25 を RRF 統合）
+        search_results = self.hybrid.search(user_query, top_k=top_k)
 
-        # 2. ベクトル検索
-        search_results = self.retriever.search(query_embedding, top_k=top_k)
-
-        # 3. コンテキスト作成
+        # 2. コンテキスト作成
         context = format_context(search_results)
 
-        # 4. 回答生成
+        # 3. 回答生成
         answer = self.generator.generate(
             system_prompt=SYSTEM_PROMPT,
             context=context,
@@ -74,16 +79,13 @@ class RAGPipeline:
         Yields:
             回答テキストのチャンク
         """
-        # 1. 質問をベクトル化
-        query_embedding = self.embedder.embed_single(user_query)
+        # 1. hybrid 検索（embedding + BM25 を RRF 統合）
+        search_results = self.hybrid.search(user_query, top_k=top_k)
 
-        # 2. ベクトル検索
-        search_results = self.retriever.search(query_embedding, top_k=top_k)
-
-        # 3. コンテキスト作成
+        # 2. コンテキスト作成
         context = format_context(search_results)
 
-        # 4. ストリーミング回答生成
+        # 3. ストリーミング回答生成
         yield from self.generator.generate_with_streaming(
             system_prompt=SYSTEM_PROMPT,
             context=context,
@@ -126,9 +128,9 @@ class RAGPipeline:
         query_embedding = self.embedder.embed_single(user_query)
         embedding_time = time.time() - embedding_start
 
-        # 2. ベクトル検索
+        # 2. hybrid 検索（embedding + BM25 を RRF 統合。埋め込みは上で計測済みを渡す）
         search_start = time.time()
-        search_results = self.retriever.search(query_embedding, top_k=top_k)
+        search_results = self.hybrid.search(user_query, top_k=top_k, query_embedding=query_embedding)
         search_time = time.time() - search_start
 
         # 3. コンテキスト作成
