@@ -8,17 +8,38 @@
     <script defer src="/vendor/alpine.min.js"></script>
   </head>
   <body>
-    <main x-data="chat()">
+    <main x-data="chat()" @click="showHistory = false">
+      <div class="topbar">
+        <button type="button" class="settings-btn" @click="openSettings()">⚙ 設定</button>
+      </div>
+
       <h1>ねっしー マニュアル検索</h1>
       <p class="lead">サークルの書類・マニュアルに質問できます。回答には出典を表示します。</p>
 
       <form class="ask" @submit.prevent="ask()">
-        <input
-          type="text"
-          x-model="query"
-          placeholder="質問を入力（例: 総リーの仕事は？）"
-          :disabled="loading"
-        />
+        <div class="ask-field" @click.stop>
+          <input
+            type="text"
+            x-model="query"
+            placeholder="質問を入力（例: 総リーの仕事は？）"
+            :disabled="loading"
+            @focus="showHistory = true"
+            @input="showHistory = true"
+            autocomplete="off"
+          />
+          <!-- 検索履歴ドロップダウン（検索エンジン風） -->
+          <ul class="history" x-show="showHistory && history.length" x-cloak>
+            <li class="history-head">
+              <span>最近の質問</span>
+              <button type="button" class="history-clear" @click="clearHistory()">履歴を消去</button>
+            </li>
+            <template x-for="(h, i) in history" :key="i">
+              <li class="history-item" @click="useHistory(h)">
+                <span class="history-icon">🕘</span><span x-text="h"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
         <button type="submit" :disabled="loading || !query.trim()">質問</button>
       </form>
 
@@ -27,7 +48,7 @@
 
       <section class="answer" x-show="answer" x-cloak>
         <h2>回答</h2>
-        <div class="answer-body" x-text="answer"></div>
+        <div class="answer-body" x-html="answerHtml"></div>
 
         <template x-if="sources.length">
           <div>
@@ -41,7 +62,83 @@
         </template>
 
         <p class="meta" x-show="metrics" x-text="metricsText"></p>
+
+        <!-- 不具合報告フォーム（回答の最下部） -->
+        <div class="feedback">
+          <button type="button" class="feedback-toggle" @click="feedbackOpen = !feedbackOpen" x-show="!feedbackDone">
+            <span x-text="feedbackOpen ? '✕ 不具合報告を閉じる' : '⚑ この回答の不具合を報告'"></span>
+          </button>
+          <p class="feedback-done" x-show="feedbackDone" x-cloak>報告を受け付けました。ご協力ありがとうございます。</p>
+
+          <div class="feedback-form" x-show="feedbackOpen && !feedbackDone" x-cloak>
+            <label class="feedback-label">不具合の種類</label>
+            <select x-model="feedbackType">
+              <option value="wrong">間違った情報が出てきた</option>
+              <option value="missing">必要な情報が出てこない</option>
+              <option value="other">その他</option>
+            </select>
+            <label class="feedback-label">説明（任意）</label>
+            <textarea x-model="feedbackDetail" rows="3" placeholder="どこがどう問題だったかを具体的に書いてください"></textarea>
+            <p class="error" x-show="feedbackError" x-text="feedbackError"></p>
+            <button type="button" class="feedback-submit" @click="submitFeedback()" :disabled="feedbackSending">送信</button>
+          </div>
+        </div>
       </section>
+
+      <!-- 設定モーダル（タブ: 検索設定 / 使用ログ / このシステムについて） -->
+      <div class="modal-backdrop" x-show="settingsOpen" x-cloak @click="settingsOpen = false">
+        <div class="modal" @click.stop>
+          <div class="modal-head">
+            <h2>設定</h2>
+            <button type="button" class="modal-close" @click="settingsOpen = false">✕</button>
+          </div>
+
+          <div class="tabs">
+            <button type="button" :class="{ active: tab === 'search' }" @click="tab = 'search'">検索設定</button>
+            <button type="button" :class="{ active: tab === 'log' }" @click="tab = 'log'">使用ログ</button>
+            <button type="button" :class="{ active: tab === 'about' }" @click="tab = 'about'">このシステムについて</button>
+          </div>
+
+          <!-- ① 検索設定 -->
+          <div class="tab-panel" x-show="tab === 'search'">
+            <p class="tab-desc">回答に使う資料の数を選べます。</p>
+            <label class="radio">
+              <input type="radio" value="broad" x-model="searchMode" @change="saveSearchMode()" />
+              <span><strong>ざっくり検索</strong>（デフォルト・4チャンク）<br /><small>関連の強い資料に絞って、手早く答えます。</small></span>
+            </label>
+            <label class="radio">
+              <input type="radio" value="detailed" x-model="searchMode" @change="saveSearchMode()" />
+              <span><strong>詳しく検索</strong>（10チャンク）<br /><small>幅広く資料を見て、もれなくていねいに答えます。</small></span>
+            </label>
+          </div>
+
+          <!-- ② 使用ログ -->
+          <div class="tab-panel" x-show="tab === 'log'">
+            <h3 x-text="stats ? (stats.month + ' の利用状況') : '利用状況'"></h3>
+            <template x-if="stats">
+              <ul class="stat-list">
+                <li><span>質問された回数</span><strong x-text="stats.count + ' 回'"></strong></li>
+                <li><span>入力トークン</span><strong x-text="stats.inputTokens.toLocaleString()"></strong></li>
+                <li><span>出力トークン</span><strong x-text="stats.outputTokens.toLocaleString()"></strong></li>
+              </ul>
+            </template>
+            <p class="status" x-show="!stats && !statsError">読み込み中...</p>
+            <p class="error" x-show="statsError" x-text="statsError"></p>
+          </div>
+
+          <!-- ③ このシステムについて -->
+          <div class="tab-panel" x-show="tab === 'about'">
+            <p>このシステムは、サークルの書類やマニュアルに日本語で質問できる「AI検索」です。</p>
+            <ul class="about-list">
+              <li>質問すると、関係しそうな資料を自動でさがし、その内容をもとにAIが要点をまとめて答えます。</li>
+              <li>答えの下には、どの資料を参考にしたか（出典）が表示されます。気になったら元の資料も確認できます。</li>
+              <li>資料に書かれていないことは、推測せず「記載されていません」と答えます。</li>
+              <li>答えが間違っていたり、ほしい情報が出てこないときは、答えの下の「不具合を報告」から知らせてください。改善に使います。</li>
+            </ul>
+            <p class="tab-desc">資料の検索はこの端末の中だけで行われ、回答文の作成にだけ外部のAI（Gemini）を使っています。</p>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="/app.js"></script>

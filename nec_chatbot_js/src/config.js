@@ -10,6 +10,8 @@ export const config = {
   root,
   docsDir: path.join(root, 'data', 'docs'),
   indexPath: path.join(root, 'data', 'index.json'),
+  statsPath: path.join(root, 'data', 'stats.json'), // 月別の利用統計
+  feedbackPath: path.join(root, 'data', 'feedback.jsonl'), // 不具合報告ログ（1行1件）
   dictDir: path.join(root, 'data', 'dict'),
   glossaryPath: path.join(root, 'data', 'dict', 'glossary.md'),
   kakariTermsPath: path.join(root, 'data', 'dict', 'kakari_terms.txt'),
@@ -22,6 +24,13 @@ export const config = {
   // 検索（実験で調整するパラメータ）
   topK: Number(process.env.TOP_K || 10),
   candidateK: Number(process.env.CANDIDATE_K || 30),
+
+  // 検索モード別の取得件数（UIの「検索設定」で切り替え）
+  searchModes: {
+    broad: Number(process.env.SEARCH_K_BROAD || 4), // ざっくり検索（デフォルト・少なめに絞る）
+    detailed: Number(process.env.SEARCH_K_DETAILED || 10), // 詳しく検索（幅広く見る）
+  },
+  defaultSearchMode: 'broad',
 
   // 生成（Gemini）
   gemini: {

@@ -1,4 +1,6 @@
 node_modules/
 .env
 data/index.json
+data/stats.json
+data/feedback.jsonl
 models/

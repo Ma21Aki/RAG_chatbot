@@ -34,8 +34,18 @@ npm start                # http://localhost:3000
 ```
 ブラウザでアクセスすると質問でき、回答と出典が表示される。
 
-- POST /api/ask    `{ "query": "..." }` → 回答＋出典＋メトリクス
-- POST /api/search `{ "query": "..." }` → 検索結果のみ（LLM不要）
+- POST /api/ask      `{ "query": "..." }` → 回答＋出典＋メトリクス
+- POST /api/search   `{ "query": "..." }` → 検索結果のみ（LLM不要）
+- GET  /api/stats    → 今月の質問回数・入出力トークン総量（UIの「設定」から表示）
+- POST /api/feedback `{ "type", "detail", "query", "answer" }` → 不具合報告を記録
+
+## 利用統計・不具合報告
+
+- 検索履歴: ブラウザの localStorage に直近10件を保存（入力欄クリックで表示）。サーバーには送らない。
+- 利用統計: 質問のたびに `data/stats.json` へ月別集計（質問回数・入出力トークン）。UI左上の「設定」から閲覧。
+- 不具合報告: 回答下部のフォームから送信され `data/feedback.jsonl` に1行1件で追記される。
+  管理者はこのファイルを直接確認して対応する（メール等の通知はしない）。
+  どちらも実行時に生成される（gitignore対象）。
 
 ## 構成（Python版との対応）
 
