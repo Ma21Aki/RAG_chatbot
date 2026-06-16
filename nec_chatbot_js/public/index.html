@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ねっしー マニュアル検索</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script defer src="/vendor/alpine.min.js"></script>
+  </head>
+  <body>
+    <main x-data="chat()">
+      <h1>ねっしー マニュアル検索</h1>
+      <p class="lead">サークルの書類・マニュアルに質問できます。回答には出典を表示します。</p>
+
+      <form class="ask" @submit.prevent="ask()">
+        <input
+          type="text"
+          x-model="query"
+          placeholder="質問を入力（例: 総リーの仕事は？）"
+          :disabled="loading"
+        />
+        <button type="submit" :disabled="loading || !query.trim()">質問</button>
+      </form>
+
+      <p class="status" x-show="loading">処理中...</p>
+      <p class="error" x-show="error" x-text="error"></p>
+
+      <section class="answer" x-show="answer" x-cloak>
+        <h2>回答</h2>
+        <div class="answer-body" x-text="answer"></div>
+
+        <template x-if="sources.length">
+          <div>
+            <h3>出典</h3>
+            <ul class="sources">
+              <template x-for="s in sources" :key="s.source + '-' + s.page">
+                <li x-text="(s.folder ? s.folder + '/' : '') + s.source + ' (p.' + s.page + ')'"></li>
+              </template>
+            </ul>
+          </div>
+        </template>
+
+        <p class="meta" x-show="metrics" x-text="metricsText"></p>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
