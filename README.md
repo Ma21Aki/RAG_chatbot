@@ -1,68 +1,180 @@
 # サークル マニュアル RAGシステム
 
-サークルの書類・マニュアル（PDF）に自然言語で質問できる RAG システム。
-回答には出典（ファイル名・ページ）を明示し、ハルシネーションを抑制します。
+サークルの引き継ぎ資料（PDF約15冊）に自然言語で質問すると、出典つきで答えるRAGシステム。
+検索はローカル完結、回答生成のみ Gemini API を使う。ラズパイでの常時稼働を想定。
 
-処理の流れ: 質問 → ベクトル化(embed) → Chromaで類似チャンク検索 → Geminiが回答生成
+```
+Q. 会計係の仕事は？
 
----
+A. （資料の該当箇所だけを根拠にした回答。書かれていなければ「記載されていません」と答える）
 
-## まず見る
+   出典: ねっしー遺産/2.通常イベント/会計係のお仕事.pdf (p.2)
+         ねっしー遺産/3.夏キャン/会計係のお仕事.pdf (p.6)
+```
 
-- セットアップして動かす → [SETUP.md](SETUP.md)
-- 実験する（質問を投げる入口） → [experiment.ipynb](nec_chatbot/scripts/ipynb/experiment.ipynb)
-  - `ask_to_chatbot("質問")` … 回答＋出典＋メトリクス
-  - `serche_query("質問")` … 検索のみ（Gemini不要）
+※ 資料はサークルの内部文書のため、リポジトリには含めていません（[使うデータ](#使うデータ)）。
 
-## 主要ファイル
+## 解きたかった課題
 
-| パス | 役割 |
+サークルの運用知識が数十本のPDFに散らばっていて、必要な情報が探せない。
+一般的な全文検索では、内輪語（総リー・IB・メーリス等）が引っかからず実用にならなかった。
+そこで「内輪語だらけの少量文書」に効くRAGを、素朴なベクトル検索から段階的に作り込んだ。
+
+## 仕組み
+
+```
+[索引構築（文書を追加したときだけ）]
+
+  PDF / MD ──> ページ抽出 ──> 500字チャンク（重なり50字）──> ベクトル化 ──> Chroma
+                                                        （画像PDFは同名.mdで差し替え）
+
+
+[質問への回答]
+
+  質問: 「IBの仕事は？」
+     |
+     v
+  [1] 用語注入 ............ 内輪語の定義を用語辞典から引いて質問に連結
+     |                      （埋め込みモデルが知らない語を補う）
+     |
+     +---------------------------+---------------------------+
+     v                                                       v
+  [2] ベクトル検索                                        [3] BM25検索
+      意味の近さで拾う                                        語の一致で拾う
+      (Chroma / MiniLM)                                    (Janome + ユーザー辞書)
+     |  上位30件                                             |  上位30件
+     +---------------------------+---------------------------+
+                                 v
+                        [4] RRF で順位統合 ..... 尺度の違う2つの順位を正規化なしで融合
+                                 v
+                        [5] 係名ブースト ....... 質問中の係名がファイル名に一致したら加点
+                                 v
+                           上位5チャンク
+                                 v
+                        [6] Gemini で回答生成 ... 資料に無いことは答えないよう指示
+                                 v
+                    回答 ＋ 出典（ファイル名・ページ）
+```
+
+## 工夫した点
+
+1. ハイブリッド検索（RRF）
+   ベクトル検索は「総リー」のような固有名詞に弱く、BM25は言い換えに弱い。
+   スコアの尺度が違う2つを、順位だけを使う RRF（Reciprocal Rank Fusion）で融合し、
+   正規化のチューニングなしに両者の長所を取った。
+
+2. 内輪語への3段の対策
+   - ユーザー辞書: 分かち書きで「総リー」「IB」が誤分割されるのを防ぐ
+   - 用語注入: 質問に内輪語があれば、用語辞典の定義を検索クエリに足す
+   - 係名ブースト: 質問中の係名がファイル名に一致した文書を上位へ押し上げる
+
+3. 効果を数字で確認してから採用
+   施策ごとに評価セットで Hit@k と MRR を測り、効いたものだけ残した（下表）。
+
+4. 運用を見据えた再実装
+   ラズパイ常時稼働のため、Python版と同じ検索ロジックを Node.js へ移植。
+   埋め込みも transformers.js でローカル実行し、外部に出るのは生成時の質問文だけにした。
+
+## 精度
+
+評価セット15問・top_k=5 での実測（`python nec_chatbot/scripts/evaluate.py`）。
+Hit@5 は期待する文書が上位5件に入った割合、MRR は最初に当てた順位の逆数の平均。
+
+| 検索方式 | Hit@5 | MRR |
+|---|---|---|
+| ベクトル検索のみ | 80% | 0.561 |
+| BM25のみ | 100% | 0.844 |
+| ハイブリッド（RRF＋係名ブースト） | 100% | 0.947 |
+| ＋用語注入（現行） | 100% | 1.000 |
+
+MRR 1.000 は全問で期待文書を1位に置けた状態。ただし評価セットは15問と小規模で、
+係名を含む質問に偏っている点は割り引いて見る必要がある。
+
+コストは1問あたり約2,000トークン・2〜3秒（大半は検索結果の読み込み）。
+
+## できること
+
+- PDFへの自然言語質問に、出典（ファイル名・ページ）つきで回答
+- 内輪語・固有名詞を含む質問の検索（上記の3段の対策）
+- 資料に書かれていない質問には「記載されていません」と答える（ハルシネーション抑制）
+- ブラウザUI（JS版）: 検索履歴、月別の利用統計、不具合報告フォーム、検索件数の切り替え
+- 検索と埋め込みはローカル完結。API課金は生成のみ
+
+## 現状の限界
+
+- 複数文書をまたぐ比較・要約は苦手（例「総リーと副リーの違いは？」）。関連文書は引けても、
+  回答としてまとまらないことがある
+- 文書化されていない暗黙知には答えられない（元資料に無いため）
+- 画像PDFはOCR起こしの `.md` を手作業で用意する必要がある
+- 評価セットが15問と小規模なため、精度の数字は目安
+
+## 使うデータ
+
+対象はサークルの引き継ぎ資料。内部文書のためリポジトリには含めていません（`.gitignore` で
+元データ・索引・チャンクダンプをまとめて除外）。規模と性質は次のとおりです。
+
+| 項目 | 内容 |
 |---|---|
-| [pipeline.py](nec_chatbot/backend/app/rag/pipeline.py) | RAG全体の流れ（まずこれを読むと全体像がわかる） |
-| [embedder.py](nec_chatbot/backend/app/rag/embedder.py) | テキストのベクトル化（sentence-transformers） |
-| [retriever.py](nec_chatbot/backend/app/rag/retriever.py) | Chromaでのベクトル検索 |
-| [generator.py](nec_chatbot/backend/app/rag/generator.py) | Geminiでの回答生成 |
-| [prompt_templates.py](nec_chatbot/backend/app/rag/prompt_templates.py) | システムプロンプト・出典整形 |
-| [config.py](nec_chatbot/backend/app/config.py) | 設定の読み込み（.envを参照） |
-| [rebuild_index.py](nec_chatbot/scripts/rebuild_index.py) | PDF→チャンク分割→索引構築 |
-| [.env.example](.env.example) | 環境変数のひな形（コピーして`.env`を作る） |
+| 種類 | 役職・係ごとの業務マニュアル、新入生向け用語辞典、イベント運営手順 |
+| 形式 | PDF 39ファイル。うち数点は手書きスキャンの画像PDFで、OCR起こしのMarkdownを同名で併置 |
+| 規模 | 索引後で約300チャンク（1チャンクあたり平均368字） |
+| 構成 | フォルダ3階層（初級マニュアル / 通常イベント / 夏キャンプ）。フォルダ名も検索のメタデータに使う |
 
-詳細な手順や構成は [nec_chatbot/README.md](nec_chatbot/README.md) を参照。
-要件・設計は [requirements.md](docs/requirements.md) / [technical_design.md](docs/technical_design.md)。
+このデータの扱いにくさが、そのまま設計の理由になっています。
+
+- 質問の主語が内輪語になる（「総リー」「IB」等。一般の埋め込みモデルには意味が無い語）
+  → 用語注入・ユーザー辞書
+- ファイル名が答えそのもの（`〇〇係のお仕事.pdf`）
+  → 係名ブースト
+- 10年分の寄せ集めで表記揺れがある（仕事／お仕事、年度・版の表記）
+  → 索引前にファイル名の命名規則を統一（[data_changes.md](nec_chatbot/docs/data_changes.md) に記録）
+- 画像PDFはテキスト抽出できない
+  → OCR起こしのMarkdownを同名で置くと、索引時に自動で差し替わる
+
+自分の資料で動かす場合の配置場所とファイル形式は [SETUP.md](SETUP.md) に書いてあります。
 
 ## 技術スタック
 
-- 埋め込み: sentence-transformers（paraphrase-multilingual-MiniLM-L12-v2 / ローカル・無料）
-- ベクトルDB: Chroma
-- 生成: Gemini API
-- PDF処理: pypdf
+| 領域 | 採用 |
+|---|---|
+| 埋め込み | paraphrase-multilingual-MiniLM-L12-v2（ローカル実行・無料） |
+| ベクトル検索 | Chroma（Python版） / index.json 総当りcosine（JS版） |
+| 語彙検索 | BM25（分かち書き: Janome / kuromoji＋ユーザー辞書） |
+| 統合 | RRF（Reciprocal Rank Fusion） |
+| 生成 | Gemini API（gemini-2.5-flash） |
+| PDF処理 | pypdf |
+| 実装 | Python 3.12 / Node.js（Express＋Alpine.js） |
 
----
+## 構成
 
-## 現在のできること
+同じ検索ロジックを2通りで実装している。
 
-- 質問文とpdfの500字毎ブロックを類似度比較し、それをAIに投げて回答生成。参照元も提示
-- 直接的言及があればそこそこの精度で拾える。計算も重くない
-- 1回のチャット（検索上位5件を参照）で
-  - 約2,000トークン消費（大半が検索結果の読み込み）
-  - 所要時間 3秒前後
-- 初回設定: PDFをチャンク分割・ベクトル化して索引を構築。一度設定したら永続（[rebuild_index.py](nec_chatbot/scripts/rebuild_index.py)）
+| | [nec_chatbot/](nec_chatbot/)（Python版） | [nec_chatbot_js/](nec_chatbot_js/)（JS版） |
+|---|---|---|
+| 役割 | 精度改良の実験場 | 実運用（ラズパイ＋ブラウザUI） |
+| 入口 | [experiment.ipynb](nec_chatbot/scripts/ipynb/experiment.ipynb) | `http://localhost:3000` |
+| 索引 | Chroma（永続DB） | index.json |
 
+読むなら [pipeline.py](nec_chatbot/backend/app/rag/pipeline.py)（全体の流れ）→
+[hybrid_retriever.py](nec_chatbot/backend/app/rag/hybrid_retriever.py)（検索の中核）の順。
 
-## できないこと
+## 動かす
 
-- 文中で直接言及されていない問いには答えにくい
-  - 例: 「総リーと副リーの仕事の違いは？」（比較・推論が必要な問い）
-- 同一pdfの中でも距離が離れると検出力が落ちる
+```bash
+# Python版（実験）
+cd nec_chatbot/backend && python -m venv venv && venv\Scripts\activate
+pip install -r requirements.txt
+python ../scripts/rebuild_index.py      # 索引構築
+jupyter notebook ../scripts/ipynb/experiment.ipynb
 
-## 今後の改良案
+# JS版（運用）
+cd nec_chatbot_js && npm install
+npm run build-index && npm start        # http://localhost:3000
+```
 
-- tier1（すぐやる）: 
-    - ★シンプルな単語検索ベースの検索 ⇨ 固有名詞に強くなる
-    - ★チャンキング方法の見直し ⇨ メタタグ設定やオーバーチャンキング幅等、検索後に何をAIに渡すかの選定。具体的にはparent-childやcontext-expantion。クエリ消費がきついのがネックだが
-- tier2（やりたい）:
-    - 使用文書の選定と構造化 ⇨ 現状は暗黙知を含むねっしー基本情報が足りない。 
-    - HyDE ⇨　質問に類似するチャンクではなく、質問への仮想的回答に類似するチャンクも探させる
-- tier3（後で）:
-    - ★ハイブリッド検索 ⇨　ベクトル変換のモデルを複数組み合わせる。具体的にはBM25(TFIDF的)を用いる。単語検索の上位互換。初回計算が重いが最終的にはやりたい。
-    - embeddingモデルの変更 ⇨ 現状のminiLMを日本語特化の ruri v3に変える等。現状そこまで困ってなさげ
+`.env` に `GEMINI_API_KEY` が必要（生成のみ。検索だけなら不要）。
+資料PDFは同梱していないため、動かすには自分の文書を `data/` 配下に置きます（[SETUP.md](SETUP.md)）。
+
+詳細手順は [SETUP.md](SETUP.md)、各実装の説明は
+[nec_chatbot/README.md](nec_chatbot/README.md) / [nec_chatbot_js/README.md](nec_chatbot_js/README.md)。
+要件・設計は [requirements.md](docs/requirements.md) / [technical_design.md](docs/technical_design.md)。

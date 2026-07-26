@@ -1,6 +1,14 @@
 node_modules/
 .env
+models/
+
+# サークル内部資料（元データと、本文が復元できる派生物）
+data/docs/*
+!data/docs/.gitkeep
 data/index.json
+data/dict/glossary.md
+*.pdf
+
+# 実行時に生成される運用データ
 data/stats.json
 data/feedback.jsonl
-models/

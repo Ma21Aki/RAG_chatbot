@@ -50,18 +50,38 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
-# ローカルストレージ（実運用データ）
+# ========================================
+# サークル内部資料（絶対にGitHubへ上げない）
+# 資料本体だけでなく、本文が復元できる派生物（索引・チャンクダンプ）も除外する
+# ========================================
+
+# 元データ: PDF と OCR起こしの Markdown
 /nec_chatbot/data/pdfs/*
 !/nec_chatbot/data/pdfs/.gitkeep
+/nec_chatbot_js/data/docs/*
+!/nec_chatbot_js/data/docs/.gitkeep
+/nec_chatbot/マニュアルあれこれ/
+
+# 保険: 置き場所を間違えても PDF は一切追跡しない
+*.pdf
+
+# 索引・チャンク（中身から本文が読めてしまう）
 /nec_chatbot/data/chroma_db/
 /nec_chatbot/backend/data/chroma_db/
 /nec_chatbot/data/backups/
+/nec_chatbot_js/data/index.json
+/nec_chatbot/scripts/chunks_dump.csv
+*chunks_dump*.csv
+
+# 用語辞典（資料本文のOCR起こしそのもの）。ひな形は glossary.example.md
+/nec_chatbot_js/data/dict/glossary.md
+
+# 実行時に生成される運用データ
+/nec_chatbot_js/data/stats.json
+/nec_chatbot_js/data/feedback.jsonl
 *.db
 *.sqlite
 *.sqlite3
-
-# 個人情報を含むサークル内部資料（GitHubには上げない）
-/nec_chatbot/マニュアルあれこれ/
 
 # APIキーのスクリーンショット等（機密）
 docs/*API_key*.png
